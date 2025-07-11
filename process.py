@@ -24,7 +24,7 @@ ASSET_BASE_URL_FGB = os.getenv("ASSET_BASE_URL_FGB", "https://your-bucket.exampl
 ASSET_BASE_URL_ZIP = os.getenv("ASSET_BASE_URL_ZIP", "https://your-bucket.example.com/zips")
 
 # Get current year and add it to shapefile base URL
-SYNC_YEAR = os.getenv("SYNC_YEAR", str(datetime.datetime.now().year))
+SYNC_YEAR = os.getenv("SYNC_YEAR", str(datetime.now().year))
 SHAPEFILE_BASE_URL = SHAPEFILE_BASE_URL.rstrip('/') + f"/{SYNC_YEAR}/"
 
 # Confirm loaded config
@@ -188,7 +188,7 @@ def main(args):
     else:
         print("✅ No new zip items to add.")
     # copy updated parquet file to zipped files output directory
-    shutil.copy(ZIP_PARQUET_PATH, ZIPPED_DIR / ZIP_PARQUET_PATH.name)
+    shutil.copy(ZIP_PARQUET_PATH, ZIPPED_DIR / ZIP_PARQUET_PATH)
 
     # Generate grouped_items.parquet (many assets per item)
     existing_grouped = load_existing(GROUPED_PARQUET_PATH)
@@ -214,7 +214,7 @@ def main(args):
     else:
         print("✅ No new grouped items to add.")
     # copy updated parquet file to flatgeobufs output directory
-    shutil.copy(GROUPED_PARQUET_PATH, FLATGEOBUF_DIR / GROUPED_PARQUET_PATH.name)
+    shutil.copy(GROUPED_PARQUET_PATH, FLATGEOBUF_DIR / GROUPED_PARQUET_PATH)
 
 if __name__ == "__main__":
     import sys
