@@ -22,4 +22,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENTRYPOINT ["python", "process_shapefiles.py"]
+ENTRYPOINT ["python", "process.py"]

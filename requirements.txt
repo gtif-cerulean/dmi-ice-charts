@@ -4,3 +4,4 @@ shapely
 requests
 pyarrow
 fiona
+beautifulsoup4

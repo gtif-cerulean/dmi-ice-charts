@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+from bs4 import BeautifulSoup
 
 import geopandas as gpd
 import pandas as pd
@@ -23,8 +24,8 @@ ASSET_BASE_URL_FGB = os.getenv("ASSET_BASE_URL_FGB", "https://your-bucket.exampl
 ASSET_BASE_URL_ZIP = os.getenv("ASSET_BASE_URL_ZIP", "https://your-bucket.example.com/zips")
 
 # Get current year and add it to shapefile base URL
-current_year = datetime.now().year
-SHAPEFILE_BASE_URL = SHAPEFILE_BASE_URL.rstrip('/') + f"/{current_year}/"
+SYNC_YEAR = os.getenv("SYNC_YEAR", str(datetime.datetime.now().year))
+SHAPEFILE_BASE_URL = SHAPEFILE_BASE_URL.rstrip('/') + f"/{SYNC_YEAR}/"
 
 # Confirm loaded config
 print(f"Using config:\n"
@@ -34,8 +35,34 @@ print(f"Using config:\n"
       f"  DAILY_ITEMS_BASE_URL: {ASSET_BASE_URL_FGB}\n"
       f"  ZIP_ITEMS_BASE_URL: {ASSET_BASE_URL_ZIP}")
 
-FLATGEOBUF_DIR.mkdir(exist_ok=True)
-ZIPPED_DIR.mkdir(exist_ok=True)
+FLATGEOBUF_DIR.mkdir(exist_ok=True, parents=True)
+ZIPPED_DIR.mkdir(exist_ok=True, parents=True)
+
+def fetch_folder_list_from_remote(base_url):
+    print(f"Fetching folder list from remote: {base_url}")
+    response = requests.get(base_url)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    folder_names = []
+
+    for link in soup.find_all('a'):
+        href = link.get('href')
+
+        if (
+            not href or
+            href in ('../', '/') or
+            href.startswith('public') or
+            href.startswith('/')  # Avoid absolute paths like /public/...
+        ):
+            continue
+
+        if href.endswith('/'):
+            folder = href.rstrip('/')
+            folder_names.append(folder)
+
+    folder_names = sorted(set(folder_names))
+    return {"list": folder_names}
 
 def extract_date(folder_name):
     try:
@@ -77,7 +104,20 @@ def load_existing(path):
         return gpd.read_parquet(path)
     return gpd.GeoDataFrame(columns=["filename", "item_id", "geometry", "date", "asset_url"])
 
-def main(json_path):
+def main(args):
+    if len(args) > 1:
+        json_path = Path(args[1])
+        if not json_path.exists():
+            print(f"❌ JSON file {json_path} does not exist.")
+            return
+    else:
+        # Fetch folder list from remote if no JSON file provided
+        json_data = fetch_folder_list_from_remote(SHAPEFILE_BASE_URL)
+        json_path = Path("folders.json")
+        with open(json_path, "w") as f:
+            json.dump(json_data, f, indent=2)
+        print(f"✅ Fetched folder list and saved to {json_path}")
+
     with open(json_path) as f:
         folders = json.load(f)["list"]
 
@@ -147,6 +187,8 @@ def main(json_path):
         print(f"✅ Updated {ZIP_PARQUET_PATH} with {len(new_zip_records)} items.")
     else:
         print("✅ No new zip items to add.")
+    # copy updated parquet file to zipped files output directory
+    shutil.copy(ZIP_PARQUET_PATH, ZIPPED_DIR / ZIP_PARQUET_PATH.name)
 
     # Generate grouped_items.parquet (many assets per item)
     existing_grouped = load_existing(GROUPED_PARQUET_PATH)
@@ -171,10 +213,12 @@ def main(json_path):
         print(f"✅ Updated {GROUPED_PARQUET_PATH} with {len(grouped_records)} grouped items.")
     else:
         print("✅ No new grouped items to add.")
+    # copy updated parquet file to flatgeobufs output directory
+    shutil.copy(GROUPED_PARQUET_PATH, FLATGEOBUF_DIR / GROUPED_PARQUET_PATH.name)
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 2:
-        print("Usage: python process.py <input.json>")
+    if len(sys.argv) > 2:
+        print("Usage: python process.py [jsonfile_path]")
         sys.exit(1)
-    main(sys.argv[1])
+    main(sys.argv)
