@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 from bs4 import BeautifulSoup
+from shapely import union_all
 
 import geopandas as gpd
 import pandas as pd
@@ -88,9 +89,11 @@ def download_shapefile_folder(folder_name: str, destination: Path):
     return downloaded
 
 def zip_folder(source_folder: Path, zip_path: Path):
+    print(f"Zipping folder {source_folder} to {zip_path}")
     shutil.make_archive(str(zip_path).replace(".zip", ""), 'zip', root_dir=source_folder)
 
 def convert_to_flatgeobuf(shp_folder: Path, folder_name: str, out_path: Path):
+    print(f"Converting {folder_name} shapefile to FlatGeobuf at {out_path}")
     shp_file = shp_folder / f"{folder_name}.shp"
     if not shp_file.exists():
         print(f"❌ No .shp file found for {folder_name}")
@@ -156,7 +159,7 @@ def main(args):
             # Read geometry
             try:
                 gdf = gpd.read_file(fgb_path)
-                geom = gdf.unary_union.envelope  # Bounding box
+                geom = union_all(gdf.geometry).envelope  # Bounding box
             except Exception as e:
                 print(f"❌ Error reading {fgb_path}: {e}")
                 continue
@@ -188,7 +191,8 @@ def main(args):
     else:
         print("✅ No new zip items to add.")
     # copy updated parquet file to zipped files output directory
-    shutil.copy(ZIP_PARQUET_PATH, ZIPPED_DIR / ZIP_PARQUET_PATH)
+    print(f"Copying {ZIP_PARQUET_PATH} to {ZIPPED_DIR}")
+    shutil.copy(ZIP_PARQUET_PATH, ZIPPED_DIR)
 
     # Generate grouped_items.parquet (many assets per item)
     existing_grouped = load_existing(GROUPED_PARQUET_PATH)
@@ -197,7 +201,7 @@ def main(args):
     for date, items in grouped_items.items():
         item_id = f"daily_{date}"
         geometries = [i["geometry"] for i in items]
-        envelope = gpd.GeoSeries(geometries).unary_union.envelope
+        envelope = union_all(gpd.GeoSeries(geometries)).envelope
 
         grouped_records.append({
             "item_id": item_id,
@@ -214,7 +218,8 @@ def main(args):
     else:
         print("✅ No new grouped items to add.")
     # copy updated parquet file to flatgeobufs output directory
-    shutil.copy(GROUPED_PARQUET_PATH, FLATGEOBUF_DIR / GROUPED_PARQUET_PATH)
+    print(f"Copying {GROUPED_PARQUET_PATH} to {FLATGEOBUF_DIR}")
+    shutil.copy(GROUPED_PARQUET_PATH, FLATGEOBUF_DIR)
 
 if __name__ == "__main__":
     import sys
