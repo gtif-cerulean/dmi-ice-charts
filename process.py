@@ -12,15 +12,27 @@ import requests
 from shapely.geometry import box
 
 # --- Configuration ---
-ZIP_PARQUET_PATH = "zip_items.parquet"
-GROUPED_PARQUET_PATH = "grouped_items.parquet"
 
-FLATGEOBUF_DIR = Path("flatgeobufs")
-ZIPPED_DIR = Path("zips")
+# Load env vars with fallback to defaults
+GROUPED_PARQUET_PATH = os.getenv("GROUPED_PARQUET_PATH", "daily_items.parquet")
+ZIP_PARQUET_PATH = os.getenv("ZIP_PARQUET_PATH", "zipped_assets.parquet")
+FLATGEOBUF_DIR = Path(os.getenv("FLATGEOBUF_DIR", "flatgeobufs"))
+ZIPPED_DIR = Path(os.getenv("ZIPPED_DIR", "zips"))
+SHAPEFILE_BASE_URL = os.getenv("SHAPEFILE_BASE_URL", "https://download.dmi.dk/public/ICESERVICE/SIGRID3/")
+ASSET_BASE_URL_FGB = os.getenv("ASSET_BASE_URL_FGB", "https://your-bucket.example.com/daily")
+ASSET_BASE_URL_ZIP = os.getenv("ASSET_BASE_URL_ZIP", "https://your-bucket.example.com/zips")
 
-SHAPEFILE_BASE_URL = "https://download.dmi.dk/public/ICESERVICE/SIGRID3/2025"
-ASSET_BASE_URL_ZIP = "https://mybucket.example.com/zips"
-ASSET_BASE_URL_FGB = "https://mybucket.example.com/flatgeobufs"
+# Get current year and add it to shapefile base URL
+current_year = datetime.now().year
+SHAPEFILE_BASE_URL = SHAPEFILE_BASE_URL.rstrip('/') + f"/{current_year}/"
+
+# Confirm loaded config
+print(f"Using config:\n"
+      f"  GEOPARQUET_PATH: {GROUPED_PARQUET_PATH}\n"
+      f"  ZIP_INDEX_PATH: {ZIP_PARQUET_PATH}\n"
+      f"  SHAPEFILE_REMOTE_BASE_URL: {SHAPEFILE_BASE_URL}\n"
+      f"  DAILY_ITEMS_BASE_URL: {ASSET_BASE_URL_FGB}\n"
+      f"  ZIP_ITEMS_BASE_URL: {ASSET_BASE_URL_ZIP}")
 
 FLATGEOBUF_DIR.mkdir(exist_ok=True)
 ZIPPED_DIR.mkdir(exist_ok=True)
@@ -163,6 +175,6 @@ def main(json_path):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:
-        print("Usage: python process_shapefiles.py <input.json>")
+        print("Usage: python process.py <input.json>")
         sys.exit(1)
     main(sys.argv[1])

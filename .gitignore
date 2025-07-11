@@ -1,4 +1,4 @@
 flatgeobufs
 zips
-grouped_items.parquet
-zip_items.parquet
+daily_items.parquet
+zipped_assets.parquet
