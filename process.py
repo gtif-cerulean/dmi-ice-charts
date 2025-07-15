@@ -228,7 +228,7 @@ def main(args):
 
     for date, assets in grouped_items.items():
         grouped_records.append(
-            create_stac_item(date, folder_name, assets, "application/vnd.flatgeobuf")
+            create_stac_item(date, date.strftime("%Y-%m-%d") , assets, "application/vnd.flatgeobuf")
         )
 
     if grouped_records:
