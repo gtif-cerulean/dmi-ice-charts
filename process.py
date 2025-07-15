@@ -11,7 +11,6 @@ from shapely import union_all
 import geopandas as gpd
 import pandas as pd
 import requests
-from shapely.geometry import box
 
 # --- Configuration ---
 
@@ -105,8 +104,38 @@ def convert_to_flatgeobuf(shp_folder: Path, folder_name: str, out_path: Path):
 def load_existing(path):
     if os.path.exists(path):
         return gpd.read_parquet(path)
-    return gpd.GeoDataFrame(columns=["filename", "item_id", "geometry", "date", "asset_url"])
+    return gpd.GeoDataFrame(columns=[
+        "id", "type", "stac_version", "datetime",
+        "geometry", "bbox", "assets", "links"], crs="EPSG:4326"
+    )
 
+def create_stac_item(date, id, assets, asset_type):
+    datetime_obj = pd.to_datetime(date)
+
+    # Union geometries and get envelope
+    geometries = [i["geometry"] for i in assets]
+    envelope = union_all(gpd.GeoSeries(geometries)).envelope
+
+    # Construct valid STAC Item dictionary
+    stac_item = {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "id": id,
+        "datetime": datetime_obj,
+        "geometry": envelope,
+        "bbox": list(envelope.bounds),
+        "assets": {
+            f"asset_{idx}": {
+                "href": item["url"],
+                "type": asset_type,
+                "roles": ["data"]
+            }
+            for idx, item in enumerate(assets)
+        },
+        "links": []
+    }
+    return stac_item
+    
 def main(args):
     if len(args) > 1:
         json_path = Path(args[1])
@@ -125,13 +154,13 @@ def main(args):
         folders = json.load(f)["list"]
 
     existing_zip_items = load_existing(ZIP_PARQUET_PATH)
-    existing_filenames = set(existing_zip_items["filename"])
+    existing_ids = set(existing_zip_items["id"])
 
     new_zip_records = []
     grouped_items = defaultdict(list)
 
     for folder_name in folders:
-        if folder_name in existing_filenames:
+        if folder_name in existing_ids:
             continue
 
         date = extract_date(folder_name)
@@ -168,19 +197,18 @@ def main(args):
             fgb_url = f"{ASSET_BASE_URL_FGB}/{folder_name}.fgb"
 
             # Register in zip_items (single asset per item)
-            new_zip_records.append({
-                "filename": folder_name,
-                "item_id": folder_name,
-                "geometry": geom,
-                "date": pd.to_datetime(date),
-                "asset_url": zip_url
-            })
-
-            grouped_items[date].append({
-                "filename": folder_name,
-                "geometry": geom,
-                "fgb_url": fgb_url
-            })
+            # we use download folder name as id
+            new_zip_records.append(
+                create_stac_item(
+                    date,
+                    folder_name,
+                    [{"url": zip_url, "geometry": geom}],
+                    "application/zip"
+                )
+            )
+            grouped_items[date].append(
+               {"url": fgb_url, "geometry": geom}
+            )
 
     # Save updated zip_items.parquet
     if new_zip_records:
@@ -198,17 +226,10 @@ def main(args):
     existing_grouped = load_existing(GROUPED_PARQUET_PATH)
     grouped_records = []
 
-    for date, items in grouped_items.items():
-        item_id = f"daily_{date}"
-        geometries = [i["geometry"] for i in items]
-        envelope = union_all(gpd.GeoSeries(geometries)).envelope
-
-        grouped_records.append({
-            "item_id": item_id,
-            "geometry": envelope,
-            "date": pd.to_datetime(date),
-            "assets": [i["fgb_url"] for i in items]
-        })
+    for date, assets in grouped_items.items():
+        grouped_records.append(
+            create_stac_item(date, date.strftime("%Y-%m-%d") , assets, "application/vnd.flatgeobuf")
+        )
 
     if grouped_records:
         grouped_gdf = gpd.GeoDataFrame(grouped_records, crs="EPSG:4326")
