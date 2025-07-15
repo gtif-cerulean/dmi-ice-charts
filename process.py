@@ -105,7 +105,7 @@ def load_existing(path):
     if os.path.exists(path):
         return gpd.read_parquet(path)
     return gpd.GeoDataFrame(columns=[
-        "id", "type", "stac_version", "properties",
+        "id", "type", "stac_version", "datetime",
         "geometry", "bbox", "assets", "links"], crs="EPSG:4326"
     )
 
@@ -121,9 +121,7 @@ def create_stac_item(date, id, assets, asset_type):
         "type": "Feature",
         "stac_version": "1.0.0",
         "id": id,
-        "properties": {
-            "datetime": datetime_obj.isoformat()
-        },
+        "datetime": datetime_obj,
         "geometry": envelope,
         "bbox": list(envelope.bounds),
         "assets": {
@@ -230,7 +228,7 @@ def main(args):
 
     for date, assets in grouped_items.items():
         grouped_records.append(
-            create_stac_item(date, folder_name, assets, "application/x-flatgeobuf")
+            create_stac_item(date, folder_name, assets, "application/vnd.flatgeobuf")
         )
 
     if grouped_records:
