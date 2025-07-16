@@ -136,6 +136,31 @@ def create_stac_item(date, id, assets, asset_type):
     }
     return stac_item
     
+
+def add_style_link(row):
+    STYLE_URL = os.getenv("STYLE_URL", "")
+    # Skip if base URL isn't set
+    if not STYLE_URL:
+        return row.get("links", [])
+
+    assets = row.get("assets", {})
+    asset_keys = list(assets.keys())
+    if not asset_keys:
+        return row.get("links", [])
+
+    # Remove old style links
+    links = [link for link in row.get("links", []) if link.get("rel") != "style"]
+
+    # Append new style link
+    links.append({
+        "rel": "style",
+        "href": f"{STYLE_URL}",
+        "type": "text/vector-styles",
+        "asset:keys": asset_keys
+    })
+
+    return links
+
 def main(args):
     if len(args) > 1:
         json_path = Path(args[1])
@@ -231,13 +256,17 @@ def main(args):
             create_stac_item(date, date.strftime("%Y-%m-%d") , assets, "application/vnd.flatgeobuf")
         )
 
+    # updating grouped items parquet file
     if grouped_records:
         grouped_gdf = gpd.GeoDataFrame(grouped_records, crs="EPSG:4326")
         updated_grouped = pd.concat([existing_grouped, grouped_gdf], ignore_index=True)
-        updated_grouped.to_parquet(GROUPED_PARQUET_PATH)
-        print(f"✅ Updated {GROUPED_PARQUET_PATH} with {len(grouped_records)} grouped items.")
     else:
-        print("✅ No new grouped items to add.")
+        updated_grouped = existing_grouped
+    # Add style links to grouped items
+    updated_grouped["links"] = updated_grouped.apply(add_style_link, axis=1)
+    updated_grouped.to_parquet(GROUPED_PARQUET_PATH)
+    print(f"✅ Updated {GROUPED_PARQUET_PATH} with {len(grouped_records)} grouped items.")
+    
     # copy updated parquet file to flatgeobufs output directory
     print(f"Copying {GROUPED_PARQUET_PATH} to {FLATGEOBUF_DIR}")
     shutil.copy(GROUPED_PARQUET_PATH, FLATGEOBUF_DIR)
