@@ -7,6 +7,7 @@ from datetime import datetime
 from collections import defaultdict
 from bs4 import BeautifulSoup
 from shapely import union_all
+from shapely.ops import unary_union
 
 import geopandas as gpd
 import pandas as pd
@@ -161,6 +162,53 @@ def add_style_link(row):
 
     return links
 
+def merge_items_per_day(df):
+    merged_records = []
+
+    for item_id, group in df.groupby("id"):
+        # Merge geometries
+        geoms = group["geometry"].tolist()
+        merged_geom = unary_union(geoms)
+
+        # Flatten and filter assets
+        flat_assets = []
+        for assets in group["assets"]:
+            if isinstance(assets, dict):
+                flat_assets.extend([
+                    asset for asset in assets.values() if asset  # filter out nulls
+                ])
+
+        # Reindex to asset_0, asset_1, ...
+        merged_assets = {
+            f"asset_{i}": asset for i, asset in enumerate(flat_assets)
+        }
+
+        # Merge links, deduplicating by (rel, href)
+        seen_links = set()
+        merged_links = []
+        for links in group["links"]:
+            for link in links:
+                key = (link.get("rel"), link.get("href"))
+                if key not in seen_links:
+                    seen_links.add(key)
+                    merged_links.append(link)
+
+        # Use the first datetime (assumed same day)
+        date = pd.to_datetime(group["datetime"].iloc[0])
+
+        merged_records.append({
+            "type": "Feature",
+            "stac_version": "1.0.0",
+            "id": item_id,
+            "geometry": merged_geom,
+            "bbox": list(gpd.GeoSeries([merged_geom]).total_bounds),
+            "datetime": date,
+            "assets": merged_assets,
+            "links": merged_links
+        })
+
+    return gpd.GeoDataFrame(merged_records, geometry="geometry", crs="EPSG:4326")
+
 def main(args):
     if len(args) > 1:
         json_path = Path(args[1])
@@ -264,8 +312,11 @@ def main(args):
         updated_grouped = existing_grouped
     # Add style links to grouped items
     updated_grouped["links"] = updated_grouped.apply(add_style_link, axis=1)
-    updated_grouped.to_parquet(GROUPED_PARQUET_PATH)
-    print(f"✅ Updated {GROUPED_PARQUET_PATH} with {len(grouped_records)} grouped items.")
+    # make sure daily items are merged from previous runs
+    deduplicated = merge_items_per_day(updated_grouped)
+    print(f"✅ Previous length {len(updated_grouped)}, deduplicated {len(deduplicated)}")
+    deduplicated.to_parquet(GROUPED_PARQUET_PATH)
+    print(f"✅ Updated {GROUPED_PARQUET_PATH} with {len(deduplicated)} grouped items.")
     
     # copy updated parquet file to flatgeobufs output directory
     print(f"Copying {GROUPED_PARQUET_PATH} to {FLATGEOBUF_DIR}")
