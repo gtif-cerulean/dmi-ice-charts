@@ -166,9 +166,9 @@ def merge_items_per_day(df):
     merged_records = []
 
     for item_id, group in df.groupby("id"):
-        # Merge geometries
+        # Merge geometries and using envelope around them
         geoms = group["geometry"].tolist()
-        merged_geom = unary_union(geoms)
+        merged_geom = union_all(gpd.GeoSeries(geoms)).envelope
 
         # Flatten and filter assets
         flat_assets = []
